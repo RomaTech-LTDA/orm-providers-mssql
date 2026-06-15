@@ -46,7 +46,7 @@
     "@romatech/orm": "^1.0.0"
   },
   "devDependencies": {
-    "@romatech/orm": "file:../../romatech-orm",
+    "@romatech/orm": "file:../romatech-orm",
     "@types/node": "^24.1.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.3"
