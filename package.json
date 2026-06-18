@@ -6,11 +6,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/romatech-ltda/orm-providers-mssql"
+    "url": "https://github.com/RomaTech-LTDA/orm-providers-mssql"
   },
-  "homepage": "https://github.com/romatech-ltda/orm-providers-mssql#readme",
+  "homepage": "https://github.com/RomaTech-LTDA/orm-providers-mssql#readme",
   "bugs": {
-    "url": "https://github.com/romatech-ltda/orm-providers-mssql/issues"
+    "url": "https://github.com/RomaTech-LTDA/orm-providers-mssql/issues"
   },
   "keywords": [
     "orm",
