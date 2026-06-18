@@ -1,57 +1,59 @@
 {
-  "name": "@romatech/orm-providers-mssql",
-  "version": "1.0.0",
-  "description": "Microsoft SQL Server provider for RomaTech ORM",
-  "author": "RomaTech/Leandro Romanelli",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/RomaTech-LTDA/orm-providers-mssql"
-  },
-  "homepage": "https://github.com/RomaTech-LTDA/orm-providers-mssql#readme",
-  "bugs": {
-    "url": "https://github.com/RomaTech-LTDA/orm-providers-mssql/issues"
-  },
-  "keywords": [
-    "orm",
-    "mssql",
-    "sql-server",
-    "romatech",
-    "database",
-    "typescript"
-  ],
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
-  "scripts": {
-    "clean": "rimraf dist",
-    "build": "npm run clean && tsc",
-    "watch": "tsc --watch",
-    "prepublishOnly": "npm run build"
-  },
-  "dependencies": {
-    "mssql": "^11.0.1"
-  },
-  "peerDependencies": {
-    "@romatech/orm": "^1.0.0"
-  },
-  "devDependencies": {
-    "@romatech/orm": "^1.0.0",
-    "@types/node": "^24.1.0",
-    "rimraf": "^6.0.1",
-    "typescript": "^5.9.3"
-  },
-  "engines": {
-    "node": ">=18"
-  }
+    "name":  "@romatech/orm-providers-mssql",
+    "version": "1.1.0",
+    "description":  "Microsoft SQL Server provider for RomaTech ORM",
+    "author":  "RomaTech/Leandro Romanelli",
+    "license":  "MIT",
+    "repository":  {
+                       "type":  "git",
+                       "url":  "https://github.com/RomaTech-LTDA/orm-providers-mssql"
+                   },
+    "homepage":  "https://github.com/RomaTech-LTDA/orm-providers-mssql#readme",
+    "bugs":  {
+                 "url":  "https://github.com/RomaTech-LTDA/orm-providers-mssql/issues"
+             },
+    "keywords":  [
+                     "orm",
+                     "mssql",
+                     "sql-server",
+                     "romatech",
+                     "database",
+                     "typescript"
+                 ],
+    "main":  "dist/index.js",
+    "types":  "dist/index.d.ts",
+    "exports":  {
+                    ".":  {
+                              "types":  "./dist/index.d.ts",
+                              "default":  "./dist/index.js"
+                          }
+                },
+    "files":  [
+                  "dist",
+                  "README.md",
+                  "LICENSE"
+              ],
+    "scripts":  {
+                    "clean":  "rimraf dist",
+                    "build":  "npm run clean \u0026\u0026 tsc",
+                    "watch":  "tsc --watch"
+                },
+    "dependencies":  {
+                         "mssql":  "^11.0.1"
+                     },
+    "peerDependencies":  {
+                             "@romatech/orm": "^1.1.0"
+                         },
+    "devDependencies":  {
+                            "@romatech/orm": "^1.1.0",
+                            "@types/node":  "^24.1.0",
+                            "rimraf":  "^6.0.1",
+                            "typescript":  "^5.9.3"
+                        },
+    "engines":  {
+                    "node":  "\u003e=18"
+                },
+    "publishConfig":  {
+                          "access":  "public"
+                      }
 }

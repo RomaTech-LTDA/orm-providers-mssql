@@ -1,5 +1,8 @@
 # @romatech/orm-providers-mssql
 
+[![npm](https://img.shields.io/npm/v/@romatech%2Form-providers-mssql)](https://www.npmjs.com/package/@romatech/orm-providers-mssql)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/RomaTech-LTDA/orm-providers-mssql/blob/main/LICENSE)
+
 <p align="center">
   <img src="logo.png" width="120" alt="RomaTech ORM – SQL Server Provider" />
 </p>
