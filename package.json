@@ -39,7 +39,7 @@
         "watch": "tsc --watch"
     },
     "dependencies": {
-        "mssql": "^11.0.1"
+        "mssql": "^12.5.5"
     },
     "peerDependencies": {
         "@romatech/orm": "^1.2.0"
