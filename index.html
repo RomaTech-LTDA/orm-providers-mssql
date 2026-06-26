@@ -1,553 +1,125 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-	<title>@romatech/orm-providers-mssql - docs</title>
-	<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
-
-	<style>
-		/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
-		/*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
- *--------------------------------------------------------------------------------------------*/
-
-		body {
-			font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
-			font-size: var(--vscode-markdown-font-size, 14px);
-			padding: 0 26px;
-			line-height: var(--vscode-markdown-line-height, 22px);
-			word-wrap: break-word;
-		}
-
-		#code-csp-warning {
-			position: fixed;
-			top: 0;
-			right: 0;
-			color: white;
-			margin: 16px;
-			text-align: center;
-			font-size: 12px;
-			font-family: sans-serif;
-			background-color: #444444;
-			cursor: pointer;
-			padding: 6px;
-			box-shadow: 1px 1px 1px rgba(0, 0, 0, .25);
-		}
-
-		#code-csp-warning:hover {
-			text-decoration: none;
-			background-color: #007acc;
-			box-shadow: 2px 2px 2px rgba(0, 0, 0, .25);
-		}
-
-		body.scrollBeyondLastLine {
-			margin-bottom: calc(100vh - 22px);
-		}
-
-		body.showEditorSelection .code-line {
-			position: relative;
-		}
-
-		body.showEditorSelection .code-active-line:before,
-		body.showEditorSelection .code-line:hover:before {
-			content: "";
-			display: block;
-			position: absolute;
-			top: 0;
-			left: -12px;
-			height: 100%;
-		}
-
-		body.showEditorSelection li.code-active-line:before,
-		body.showEditorSelection li.code-line:hover:before {
-			left: -30px;
-		}
-
-		.vscode-light.showEditorSelection .code-active-line:before {
-			border-left: 3px solid rgba(0, 0, 0, 0.15);
-		}
-
-		.vscode-light.showEditorSelection .code-line:hover:before {
-			border-left: 3px solid rgba(0, 0, 0, 0.40);
-		}
-
-		.vscode-light.showEditorSelection .code-line .code-line:hover:before {
-			border-left: none;
-		}
-
-		.vscode-dark.showEditorSelection .code-active-line:before {
-			border-left: 3px solid rgba(255, 255, 255, 0.4);
-		}
-
-		.vscode-dark.showEditorSelection .code-line:hover:before {
-			border-left: 3px solid rgba(255, 255, 255, 0.60);
-		}
-
-		.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
-			border-left: none;
-		}
-
-		.vscode-high-contrast.showEditorSelection .code-active-line:before {
-			border-left: 3px solid rgba(255, 160, 0, 0.7);
-		}
-
-		.vscode-high-contrast.showEditorSelection .code-line:hover:before {
-			border-left: 3px solid rgba(255, 160, 0, 1);
-		}
-
-		.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
-			border-left: none;
-		}
-
-		img {
-			max-width: 100%;
-			max-height: 100%;
-		}
-
-		a {
-			text-decoration: none;
-		}
-
-		a:hover {
-			text-decoration: underline;
-		}
-
-		a:focus,
-		input:focus,
-		select:focus,
-		textarea:focus {
-			outline: 1px solid -webkit-focus-ring-color;
-			outline-offset: -1px;
-		}
-
-		hr {
-			border: 0;
-			height: 2px;
-			border-bottom: 2px solid;
-		}
-
-		h1 {
-			padding-bottom: 0.3em;
-			line-height: 1.2;
-			border-bottom-width: 1px;
-			border-bottom-style: solid;
-		}
-
-		h1,
-		h2,
-		h3 {
-			font-weight: normal;
-		}
-
-		table {
-			border-collapse: collapse;
-		}
-
-		table>thead>tr>th {
-			text-align: left;
-			border-bottom: 1px solid;
-		}
-
-		table>thead>tr>th,
-		table>thead>tr>td,
-		table>tbody>tr>th,
-		table>tbody>tr>td {
-			padding: 5px 10px;
-		}
-
-		table>tbody>tr+tr>td {
-			border-top: 1px solid;
-		}
-
-		blockquote {
-			margin: 0 7px 0 5px;
-			padding: 0 16px 0 10px;
-			border-left-width: 5px;
-			border-left-style: solid;
-		}
-
-		code {
-			font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
-			font-size: 1em;
-			line-height: 1.357em;
-		}
-
-		body.wordWrap pre {
-			white-space: pre-wrap;
-		}
-
-		pre:not(.hljs),
-		pre.hljs code>div {
-			padding: 16px;
-			border-radius: 3px;
-			overflow: auto;
-		}
-
-		pre code {
-			color: var(--vscode-editor-foreground);
-			tab-size: 4;
-		}
-
-		/** Theming */
-
-		.vscode-light pre {
-			background-color: rgba(220, 220, 220, 0.4);
-		}
-
-		.vscode-dark pre {
-			background-color: rgba(10, 10, 10, 0.4);
-		}
-
-		.vscode-high-contrast pre {
-			background-color: rgb(0, 0, 0);
-		}
-
-		.vscode-high-contrast h1 {
-			border-color: rgb(0, 0, 0);
-		}
-
-		.vscode-light table>thead>tr>th {
-			border-color: rgba(0, 0, 0, 0.69);
-		}
-
-		.vscode-dark table>thead>tr>th {
-			border-color: rgba(255, 255, 255, 0.69);
-		}
-
-		.vscode-light h1,
-		.vscode-light hr,
-		.vscode-light table>tbody>tr+tr>td {
-			border-color: rgba(0, 0, 0, 0.18);
-		}
-
-		.vscode-dark h1,
-		.vscode-dark hr,
-		.vscode-dark table>tbody>tr+tr>td {
-			border-color: rgba(255, 255, 255, 0.18);
-		}
-	</style>
-
-	<style>
-		/* Tomorrow Theme */
-		/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
-		/* Original theme - https://github.com/chriskempson/tomorrow-theme */
-
-		/* Tomorrow Comment */
-		.hljs-comment,
-		.hljs-quote {
-			color: #8e908c;
-		}
-
-		/* Tomorrow Red */
-		.hljs-variable,
-		.hljs-template-variable,
-		.hljs-tag,
-		.hljs-name,
-		.hljs-selector-id,
-		.hljs-selector-class,
-		.hljs-regexp,
-		.hljs-deletion {
-			color: #c82829;
-		}
-
-		/* Tomorrow Orange */
-		.hljs-number,
-		.hljs-built_in,
-		.hljs-builtin-name,
-		.hljs-literal,
-		.hljs-type,
-		.hljs-params,
-		.hljs-meta,
-		.hljs-link {
-			color: #f5871f;
-		}
-
-		/* Tomorrow Yellow */
-		.hljs-attribute {
-			color: #eab700;
-		}
-
-		/* Tomorrow Green */
-		.hljs-string,
-		.hljs-symbol,
-		.hljs-bullet,
-		.hljs-addition {
-			color: #718c00;
-		}
-
-		/* Tomorrow Blue */
-		.hljs-title,
-		.hljs-section {
-			color: #4271ae;
-		}
-
-		/* Tomorrow Purple */
-		.hljs-keyword,
-		.hljs-selector-tag {
-			color: #8959a8;
-		}
-
-		.hljs {
-			display: block;
-			overflow-x: auto;
-			color: #4d4d4c;
-			padding: 0.5em;
-		}
-
-		.hljs-emphasis {
-			font-style: italic;
-		}
-
-		.hljs-strong {
-			font-weight: bold;
-		}
-	</style>
-
-	<style>
-		/*
- * Markdown PDF CSS
- */
-
-		body {
-			font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
-			padding: 0 12px;
-		}
-
-		pre {
-			background-color: #f8f8f8;
-			border: 1px solid #cccccc;
-			border-radius: 3px;
-			overflow-x: auto;
-			white-space: pre-wrap;
-			overflow-wrap: break-word;
-		}
-
-		pre:not(.hljs) {
-			padding: 23px;
-			line-height: 19px;
-		}
-
-		blockquote {
-			background: rgba(127, 127, 127, 0.1);
-			border-color: rgba(0, 122, 204, 0.5);
-		}
-
-		.emoji {
-			height: 1.4em;
-		}
-
-		code {
-			font-size: 14px;
-			line-height: 19px;
-		}
-
-		/* for inline code */
-		:not(pre):not(.hljs)>code {
-			color: #C9AE75;
-			/* Change the old color so it seems less like an error */
-			font-size: inherit;
-		}
-
-		/* Page Break : use <div class="page"/> or <div class="page"></div> to insert page break
--------------------------------------------------------- */
-		.page {
-			page-break-after: always;
-		}
-
-		header {
-			height: 60px;
-			display: flex;
-			align-items: center;
-			padding: 0 1rem;
-			gap: 1rem;
-			z-index: 1000;
-		}
-
-		header img {
-			height: 60px;
-			width: auto;
-		}
-
-		header h1 {
-			font-size: 1.25rem;
-			margin: 0;
-			flex-grow: 1;
-			user-select: none;
-		}
-
-		header nav.links {
-			display: flex;
-			gap: 1rem;
-		}
-
-		header nav.links a {
-			text-decoration: none;
-			font-weight: 600;
-			border: 1px solid;
-			padding: 0.25rem 0.75rem;
-			border-radius: 4px;
-			transition: background-color 0.3s;
-		}
-
-		header nav.links a:hover,
-		header nav.links a:focus {
-			background-color: rgba(255 255 255 / 0.3);
-			outline: none;
-		}
-	</style>
-
-	<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@romatech/orm-providers-mssql — SQL Server Provider</title>
+    <meta name="description" content="Microsoft SQL Server provider for @romatech/orm. Full CRUD, migrations, scaffold, parameterised queries, and server-side SQL generation.">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a2e; line-height: 1.6; }
+        a { color: #0066ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .container { max-width: 960px; margin: 0 auto; padding: 0 1.5rem; }
+        header { border-bottom: 1px solid #e8e8e8; padding: 1rem 0; }
+        .header-inner { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+        .header-inner img { height: 48px; width: 48px; border-radius: 8px; }
+        .header-inner h1 { font-size: 1.4rem; font-weight: 700; flex: 1; }
+        .header-links { display: flex; gap: 0.5rem; }
+        .header-links a { border: 1px solid #0066ff; padding: 0.3rem 0.9rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; transition: background 0.2s; }
+        .header-links a:hover { background: #0066ff; color: #fff; text-decoration: none; }
+        .hero { padding: 3rem 0 2rem; }
+        .hero p { font-size: 1.15rem; color: #444; max-width: 700px; }
+        section { padding: 2rem 0; }
+        section h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 1rem; border-bottom: 2px solid #f0f0f0; padding-bottom: 0.5rem; }
+        .install-box { background: #1a1a2e; color: #e0e0e0; padding: 1rem 1.25rem; border-radius: 8px; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 0.9rem; overflow-x: auto; }
+        pre { background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 8px; padding: 1.25rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; }
+        code { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; }
+        :not(pre) > code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
+        .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+        .feature-card { background: #f9fafb; border: 1px solid #e8e8e8; border-radius: 8px; padding: 1.25rem; }
+        .feature-card h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.4rem; }
+        .feature-card p { font-size: 0.85rem; color: #555; }
+        footer { border-top: 1px solid #e8e8e8; padding: 2rem 0; margin-top: 2rem; text-align: center; color: #888; font-size: 0.85rem; }
+        @media (max-width: 600px) {
+            .header-inner { flex-direction: column; align-items: flex-start; }
+            .hero p { font-size: 1rem; }
+        }
+    </style>
 </head>
-
 <body>
-	<script>
-		mermaid.initialize({
-			startOnLoad: true,
-			theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
-				? 'dark'
-				: 'default'
-		});
-	</script>
-	<header>
-		<img src="logo.png" alt="RomaTech Logo" />
-		<h1 id="romatechorm-providers-mssql">@romatech/orm-providers-mssql</h1>
-		<nav class="links" aria-label="External links">
-			<a href="https://github.com/RomaTech-LTDA/orm-providers-mssql" target="_blank" rel="noopener noreferrer"
-				aria-label="GitHub repository">GitHub</a>
-			<a href="https://www.npmjs.com/package/@romatech/orm-providers-mssql" target="_blank"
-				rel="noopener noreferrer" aria-label="NPM package page">NPM</a>
-		</nav>
-	</header>
-	<p>Microsoft SQL Server provider for <a href="https://www.npmjs.com/package/@romatech/orm">@romatech/orm</a>.</p>
-	<hr>
-	<h2 id="installation">Installation</h2>
-	<pre class="hljs"><code><div>npm install @romatech/orm @romatech/orm-providers-mssql reflect-metadata
-</div></code></pre>
-	<hr>
-	<h2 id="quick-start">Quick Start</h2>
-	<pre class="hljs"><code><div><span class="hljs-keyword">import</span> <span class="hljs-string">&#x27;reflect-metadata&#x27;</span>;
-<span class="hljs-keyword">import</span> { <span class="hljs-title class_">DbContext</span>, <span class="hljs-title class_">DbContextOptions</span> } <span class="hljs-keyword">from</span> <span class="hljs-string">&#x27;@romatech/orm&#x27;</span>;
-<span class="hljs-keyword">import</span> { <span class="hljs-title class_">MsSqlProvider</span> } <span class="hljs-keyword">from</span> <span class="hljs-string">&#x27;@romatech/orm-providers-mssql&#x27;</span>;
+    <header>
+        <div class="container header-inner">
+            <img src="logo.png" alt="@romatech/orm-providers-mssql" />
+            <h1>@romatech/orm-providers-mssql</h1>
+            <nav class="header-links">
+                <a href="https://github.com/RomaTech-LTDA/orm-providers-mssql">GitHub</a>
+                <a href="https://www.npmjs.com/package/@romatech/orm-providers-mssql">npm</a>
+            </nav>
+        </div>
+    </header>
 
-<span class="hljs-keyword">class</span> <span class="hljs-title class_">AppDbContext</span> <span class="hljs-keyword">extends</span> <span class="hljs-title class_ inherited__">DbContext</span> {
-    users = <span class="hljs-variable language_">this</span>.<span class="hljs-title function_">set</span>(<span class="hljs-title class_">User</span>);
+    <main class="container">
+        <div class="hero">
+            <p>Microsoft SQL Server provider for <a href="https://www.npmjs.com/package/@romatech/orm">@romatech/orm</a>. Full CRUD, server-side WHERE/ORDER BY generation, migrations, scaffold, and parameterised queries.</p>
+        </div>
 
-    <span class="hljs-title function_">constructor</span>(<span class="hljs-params"></span>) {
-        <span class="hljs-variable language_">super</span>(
-            <span class="hljs-keyword">new</span> <span class="hljs-title class_">DbContextOptions</span>().<span class="hljs-title function_">useProvider</span>(
-                <span class="hljs-keyword">new</span> <span class="hljs-title class_">MsSqlProvider</span>({
-                    <span class="hljs-attr">user</span>: <span class="hljs-string">&#x27;sa&#x27;</span>,
-                    <span class="hljs-attr">password</span>: <span class="hljs-string">&#x27;yourPassword&#x27;</span>,
-                    <span class="hljs-attr">server</span>: <span class="hljs-string">&#x27;localhost&#x27;</span>,
-                    <span class="hljs-attr">database</span>: <span class="hljs-string">&#x27;MyDb&#x27;</span>,
-                    <span class="hljs-attr">port</span>: <span class="hljs-number">1433</span>,
-                    <span class="hljs-attr">options</span>: {
-                        <span class="hljs-attr">trustServerCertificate</span>: <span class="hljs-literal">true</span>
-                    }
+        <section>
+            <h2>Installation</h2>
+            <div class="install-box">npm install @romatech/orm @romatech/orm-providers-mssql reflect-metadata</div>
+        </section>
+
+        <section>
+            <h2>Quick Start</h2>
+            <pre><code>import 'reflect-metadata';
+import { DbContext, DbContextOptions } from '@romatech/orm';
+import { MsSqlProvider } from '@romatech/orm-providers-mssql';
+
+class AppDbContext extends DbContext {
+    users = this.set(User);
+
+    constructor() {
+        super(
+            new DbContextOptions().useProvider(
+                new MsSqlProvider({
+                    user: 'sa',
+                    password: 'yourPassword',
+                    server: 'localhost',
+                    database: 'MyDb',
+                    port: 1433,
+                    options: { trustServerCertificate: true }
                 })
             )
         );
     }
-}
-</div></code></pre>
-	<hr>
-	<h2 id="configuration-options">Configuration Options</h2>
-	<h3 id="object-style-recommended">Object-style (recommended)</h3>
-	<pre class="hljs"><code><div><span class="hljs-keyword">new</span> <span class="hljs-title class_">MsSqlProvider</span>({
-    <span class="hljs-attr">user</span>: <span class="hljs-string">&#x27;sa&#x27;</span>,
-    <span class="hljs-attr">password</span>: <span class="hljs-string">&#x27;yourPassword&#x27;</span>,
-    <span class="hljs-attr">server</span>: <span class="hljs-string">&#x27;localhost&#x27;</span>,
-    <span class="hljs-attr">database</span>: <span class="hljs-string">&#x27;MyDb&#x27;</span>,
-    <span class="hljs-attr">port</span>: <span class="hljs-number">1433</span>,              <span class="hljs-comment">// optional, defaults to 1433</span>
-    <span class="hljs-attr">options</span>: {
-        <span class="hljs-attr">trustServerCertificate</span>: <span class="hljs-literal">true</span>,  <span class="hljs-comment">// for development / self-signed certs</span>
-        <span class="hljs-attr">encrypt</span>: <span class="hljs-literal">true</span>                  <span class="hljs-comment">// required for Azure SQL</span>
-    }
-})
-</div></code></pre>
-	<h3 id="connection-string">Connection string</h3>
-	<pre class="hljs"><code><div><span class="hljs-keyword">new</span> <span class="hljs-title class_">MsSqlProvider</span>(<span class="hljs-string">&#x27;Server=localhost;Database=MyDb;User Id=sa;Password=...;Encrypt=true&#x27;</span>)
-</div></code></pre>
-	<hr>
-	<h2 id="sql-dialect">SQL Dialect</h2>
-	<table>
-		<thead>
-			<tr>
-				<th>Feature</th>
-				<th>Syntax</th>
-			</tr>
-		</thead>
-		<tbody>
-			<tr>
-				<td>Identifier quoting</td>
-				<td><code>[columnName]</code></td>
-			</tr>
-			<tr>
-				<td>Parameters</td>
-				<td><code>@param0</code>, <code>@param1</code>, ...</td>
-			</tr>
-			<tr>
-				<td>IF NOT EXISTS</td>
-				<td><code>IF OBJECT_ID(N'...', N'U') IS NULL</code></td>
-			</tr>
-		</tbody>
-	</table>
-	<hr>
-	<h2 id="supported-features">Supported Features</h2>
-	<ul>
-		<li>Full CRUD (add, addRange, update, remove, removeRange, find, getAll)</li>
-		<li>Server-side WHERE clause generation from predicates</li>
-		<li>Server-side ORDER BY generation</li>
-		<li>Migration history table (<code>__roma_migrations</code>)</li>
-		<li>Schema management (createTable, dropTable, addColumn, removeColumn)</li>
-		<li>Scaffold (introspect tables and columns via <code>INFORMATION_SCHEMA</code>)</li>
-		<li>Parameterised queries (SQL injection safe)</li>
-	</ul>
-	<hr>
-	<h2 id="type-mappings">Type Mappings</h2>
-	<table>
-		<thead>
-			<tr>
-				<th>TypeScript Type</th>
-				<th>SQL Server Type</th>
-			</tr>
-		</thead>
-		<tbody>
-			<tr>
-				<td><code>number</code> (PK)</td>
-				<td><code>INT</code></td>
-			</tr>
-			<tr>
-				<td><code>number</code></td>
-				<td><code>FLOAT</code></td>
-			</tr>
-			<tr>
-				<td><code>boolean</code></td>
-				<td><code>BIT</code></td>
-			</tr>
-			<tr>
-				<td><code>Date</code></td>
-				<td><code>DATETIME2</code></td>
-			</tr>
-			<tr>
-				<td><code>string</code></td>
-				<td><code>NVARCHAR(MAX)</code></td>
-			</tr>
-		</tbody>
-	</table>
-	<hr>
-	<h2 id="requirements">Requirements</h2>
-	<ul>
-		<li>Node.js &gt;= 18</li>
-		<li>SQL Server 2016 or later (or Azure SQL Database)</li>
-		<li>The <a href="https://www.npmjs.com/package/mssql"><code>mssql</code></a> npm package (installed
-			automatically)</li>
-	</ul>
-	<hr>
-	<h2 id="license">License</h2>
-	<p>MIT © RomaTech / Leandro Romanelli</p>
+}</code></pre>
+        </section>
 
+        <section>
+            <h2>Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <h3>Full CRUD</h3>
+                    <p>add, addRange, update, remove, removeRange, find, getAll — all with change tracking.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Server-side SQL</h3>
+                    <p>WHERE and ORDER BY clauses generated from predicates. Parameterised queries (SQL injection safe).</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Migrations</h3>
+                    <p>Migration history table, createTable, dropTable, addColumn, removeColumn.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Scaffold</h3>
+                    <p>Introspect tables and columns via INFORMATION_SCHEMA to generate entity files.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Connection String</h3>
+                    <p>Object-style config or standard SQL Server connection strings. Azure SQL supported.</p>
+                </div>
+                <div class="feature-card">
+                    <h3>SQL Server 2016+</h3>
+                    <p>Requires Node.js &ge; 18. Uses the <code>mssql</code> package (installed automatically).</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>MIT License &copy; RomaTech / Leandro Romanelli</p>
+        </div>
+    </footer>
 </body>
-
 </html>
