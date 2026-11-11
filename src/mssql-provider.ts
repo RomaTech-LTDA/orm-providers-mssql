@@ -12,20 +12,20 @@
  * - Table existence checked via `OBJECT_ID()`
  */
 
-import { ConnectionPool } from 'mssql';
+import { ConnectionPool, MsSqlRequest, MsSqlTransaction } from 'mssql';
 import {
-  applyClientSideQuery,
   buildDeleteSql,
   buildFindSql,
   buildInsertSql,
   buildSelectAllSql,
   buildSelectSql,
   buildUpdateSql,
-  IDbProvider,
+  ITransactionalProvider,
   QueryObject,
   SqlDialect,
   TableColumnInfo
 } from '@romatech/orm';
+import { applyQueryToDriverRows, DriverColumns, toDate, toNumber, ValueConverter } from './driver-rows';
 
 /**
  * Configuration object for a Microsoft SQL Server connection.
@@ -53,7 +53,7 @@ import {
  * Connection configuration for SQL Server.
  * Either a connection string or a structured config object.
  */
-type MsSqlConfig = string | {
+export type MsSqlConfig = string | {
   /** SQL Server login name. */
   user: string;
   /** SQL Server login password. */
@@ -68,8 +68,28 @@ type MsSqlConfig = string | {
    * Extra driver-level options forwarded verbatim to the `mssql` connection
    * pool (e.g. `encrypt`, `trustServerCertificate`).
    */
-  options?: Record<string, unknown>;
+  options?: MsSqlDriverOptions;
 };
+
+/** Driver options forwarded to `mssql`/`tedious` (any other key is passed through). */
+export interface MsSqlDriverOptions {
+  /** Encrypt the connection (driver default: `true`). */
+  encrypt?: boolean;
+  /**
+   * Accept the server certificate without validating it. **Insecure** (it
+   * allows man-in-the-middle attacks); only set it to `true` for local
+   * development against a self-signed certificate. Defaults to `false`
+   * since 3.0.0 (2.x silently defaulted to `true`).
+   */
+  trustServerCertificate?: boolean;
+  [option: string]: unknown;
+}
+
+/** Exactly `BEGIN`/`COMMIT`/`ROLLBACK` [`TRAN`|`TRANSACTION`] with an optional `;`. */
+const TRANSACTION_CONTROL = /^\s*(BEGIN|COMMIT|ROLLBACK)(?:\s+TRAN(?:SACTION)?)?\s*;?\s*$/i;
+
+/** Raw statements that cannot change the schema (they keep the key cache). */
+const READ_ONLY_STATEMENT = /^\s*(SELECT|WITH)\b/i;
 
 /**
  * SQL dialect definition for Microsoft SQL Server.
@@ -135,13 +155,32 @@ const dialect: SqlDialect = {
  *     database: 'MyDb',
  *     user: 'sa',
  *     password: 'password123',
+ *     // Local development with a self-signed certificate only:
  *     options: { trustServerCertificate: true }
  * });
  * ```
  */
-export class MsSqlProvider implements IDbProvider {
+export class MsSqlProvider implements ITransactionalProvider {
+  /** This provider implements {@link ITransactionalProvider}. */
+  readonly supportsTransactions = true;
+
   /** The `mssql` connection pool used for all database operations. */
   private pool!: ConnectionPool;
+
+  /**
+   * The open transaction, if any. While it is set every statement of this
+   * provider runs on the transaction's dedicated connection.
+   */
+  private transaction?: MsSqlTransaction;
+
+  /** Set when SQL Server aborted the open transaction (e.g. XACT_ABORT). */
+  private transactionAborted = false;
+
+  /** Serializes statements on the transaction connection (one request at a time). */
+  private transactionQueue: Promise<unknown> = Promise.resolve();
+
+  /** Primary-key columns per table, so DML does not introspect on every call. */
+  private readonly primaryKeyCache = new Map<string, Promise<string[]>>();
 
   /**
    * Creates a new `MsSqlProvider` instance.
@@ -162,9 +201,10 @@ export class MsSqlProvider implements IDbProvider {
    * runtime connection string (e.g., from environment variables) without
    * constructing a new provider.
    *
-   * `trustServerCertificate` is set to `true` by default so that local
-   * development environments with self-signed certificates work out of the box.
-   * Override via `config.options.trustServerCertificate = false` for production.
+   * The server certificate is validated (`trustServerCertificate: false`)
+   * unless `config.options.trustServerCertificate` is explicitly `true`
+   * (or the connection string says `TrustServerCertificate=true`). Only do
+   * that for local development with a self-signed certificate.
    *
    * @param connectionString - Optional override connection string.
    * @returns A promise that resolves when the pool is ready to accept queries.
@@ -180,8 +220,9 @@ export class MsSqlProvider implements IDbProvider {
       : {
           ...this.config,
           options: {
-            // Default: trust self-signed certs so local dev works without TLS setup.
-            trustServerCertificate: true,
+            // Secure default: validate the server certificate. Opt out explicitly
+            // with options.trustServerCertificate = true (local dev only).
+            trustServerCertificate: false,
             ...(this.config.options || {})
           }
         });
@@ -200,8 +241,103 @@ export class MsSqlProvider implements IDbProvider {
    * await provider.disconnect();
    */
   async disconnect(): Promise<void> {
+    if (this.transaction) {
+      // Never leave an open transaction holding locks on a pooled connection.
+      await this.rollbackTransaction().catch(() => undefined);
+    }
     if (this.pool) {
       await this.pool.close();
+    }
+  }
+
+  /**
+   * Starts a transaction on a dedicated pooled connection. Until
+   * {@link commitTransaction} or {@link rollbackTransaction}, every operation
+   * of this provider (CRUD, queries, DDL) runs on that connection, one
+   * statement at a time.
+   *
+   * The transaction is scoped to the provider instance: use one provider
+   * (one `DbContext`) per unit of work when requests run concurrently.
+   *
+   * @throws {Error} If a transaction is already active (no nesting).
+   */
+  async beginTransaction(): Promise<void> {
+    if (this.transaction) {
+      throw new Error('A transaction is already active on this provider; nested transactions are not supported.');
+    }
+    if (!this.pool) {
+      throw new Error('The provider is not connected; call connect() first.');
+    }
+    const transaction = this.pool.transaction();
+    transaction.on('rollback', aborted => {
+      if (aborted && this.transaction === transaction) {
+        this.transactionAborted = true;
+      }
+    });
+    await transaction.begin();
+    this.transaction = transaction;
+    this.transactionAborted = false;
+    this.transactionQueue = Promise.resolve();
+  }
+
+  /**
+   * Commits the active transaction and returns its connection to the pool.
+   *
+   * @throws {Error} If no transaction is active, or SQL Server already
+   *   aborted it (nothing was committed; the provider is reset either way).
+   */
+  async commitTransaction(): Promise<void> {
+    const transaction = this.transaction;
+    if (!transaction) {
+      throw new Error('No active transaction to commit.');
+    }
+    try {
+      await this.transactionQueue;
+      if (this.transactionAborted) {
+        throw new Error('The transaction was aborted by SQL Server and has been rolled back; nothing was committed.');
+      }
+      await transaction.commit();
+    } finally {
+      this.endTransaction();
+    }
+  }
+
+  /**
+   * Rolls back the active transaction and returns its connection to the
+   * pool. A no-op when no transaction is active (e.g. after a failed commit),
+   * so it is always safe to call from a `catch` block.
+   */
+  async rollbackTransaction(): Promise<void> {
+    const transaction = this.transaction;
+    if (!transaction) {
+      return;
+    }
+    try {
+      await this.transactionQueue;
+      if (!this.transactionAborted) {
+        await transaction.rollback();
+      }
+    } catch (error: any) {
+      // EABORT: SQL Server already rolled the transaction back.
+      if (error?.code !== 'EABORT') {
+        throw error;
+      }
+    } finally {
+      this.endTransaction();
+    }
+  }
+
+  /**
+   * Forgets the cached primary-key metadata (of one table, or of all).
+   * The provider already does this after its own DDL and after raw
+   * non-SELECT statements; call it when the schema is changed by another
+   * process while this provider is connected.
+   */
+  clearMetadataCache(tableName?: string): void {
+    if (tableName === undefined) {
+      this.primaryKeyCache.clear();
+    } else {
+      this.primaryKeyCache.delete(tableName);
     }
   }
 
@@ -224,7 +360,7 @@ export class MsSqlProvider implements IDbProvider {
    */
   async add<T extends object>(entity: T, tableName: string): Promise<void> {
     const command = buildInsertSql(tableName, entity, dialect);
-    await this.executeNonQuery(command.sql, command.params);
+    await this.send(command.sql, command.params);
   }
 
   /**
@@ -270,12 +406,13 @@ export class MsSqlProvider implements IDbProvider {
    */
   async update<T extends object>(entity: T, tableName: string): Promise<void> {
     const primaryKey = await this.getPrimaryKeyColumn(tableName);
-    // Guard: skip the round-trip if there are no columns to update besides the PK.
-    if (!Object.keys(entity).some(key => key !== primaryKey)) {
+    // Guard: skip the round-trip if there are no columns to update besides the PK
+    // (undefined values are not written, so they do not count).
+    if (!Object.entries(entity).some(([key, value]) => key !== primaryKey && value !== undefined)) {
       return;
     }
     const command = buildUpdateSql(tableName, entity, primaryKey, dialect);
-    await this.executeNonQuery(command.sql, command.params);
+    await this.send(command.sql, command.params);
   }
 
   /**
@@ -293,7 +430,7 @@ export class MsSqlProvider implements IDbProvider {
    */
   async remove<T extends object>(entity: T, tableName: string): Promise<void> {
     const command = buildDeleteSql(tableName, entity, await this.getPrimaryKeyColumn(tableName), dialect);
-    await this.executeNonQuery(command.sql, command.params);
+    await this.send(command.sql, command.params);
   }
 
   /**
@@ -331,7 +468,7 @@ export class MsSqlProvider implements IDbProvider {
    */
   async find<T extends object>(entity: T, tableName: string): Promise<T | undefined> {
     const command = buildFindSql(tableName, entity, await this.getPrimaryKeyColumn(tableName), dialect);
-    const rows = await this.executeQuery<T>(command.sql, command.params);
+    const rows = await this.send<T>(command.sql, command.params);
     return rows[0];
   }
 
@@ -349,7 +486,7 @@ export class MsSqlProvider implements IDbProvider {
    * const users = await provider.getAll<User>('users');
    */
   async getAll<T>(tableName: string): Promise<T[]> {
-    return this.executeQuery<T>(buildSelectAllSql(tableName, dialect));
+    return this.send<T>(buildSelectAllSql(tableName, dialect));
   }
 
   /**
@@ -382,7 +519,7 @@ export class MsSqlProvider implements IDbProvider {
    */
   async addMigration(migrationName: string, migrationScript: string): Promise<void> {
     await this.ensureMigrationHistoryTable();
-    await this.executeNonQuery(
+    await this.send(
       'INSERT INTO [__roma_migrations] ([migrationName], [migrationScript]) VALUES (@param0, @param1)',
       [migrationName, migrationScript]
     );
@@ -402,7 +539,7 @@ export class MsSqlProvider implements IDbProvider {
    */
   async removeMigration(migrationName: string): Promise<void> {
     await this.ensureMigrationHistoryTable();
-    await this.executeNonQuery('DELETE FROM [__roma_migrations] WHERE [migrationName] = @param0', [migrationName]);
+    await this.send('DELETE FROM [__roma_migrations] WHERE [migrationName] = @param0', [migrationName]);
   }
 
   /**
@@ -447,7 +584,7 @@ export class MsSqlProvider implements IDbProvider {
    */
   async getMigrationHistory(): Promise<string[]> {
     await this.ensureMigrationHistoryTable();
-    const rows = await this.executeQuery<{ migrationName: string }>(
+    const rows = await this.send<{ migrationName: string }>(
       'SELECT [migrationName] FROM [__roma_migrations] ORDER BY [migrationName]'
     );
     return rows.map(row => row.migrationName);
@@ -501,10 +638,13 @@ export class MsSqlProvider implements IDbProvider {
       .join(', ');
     const primaryKeySql = primaryKey ? `, PRIMARY KEY (${dialect.quoteIdentifier(primaryKey)})` : '';
     // T-SQL does not support CREATE TABLE IF NOT EXISTS — use OBJECT_ID guard instead.
-    await this.executeNonQuery(`
-      IF OBJECT_ID(N'${input.tableName.replace(/'/g, "''")}', N'U') IS NULL
+    // The bracket-quoted name is passed as a parameter so OBJECT_ID resolves
+    // exactly the table CREATE TABLE targets (e.g. a name containing a dot).
+    await this.send(`
+      IF OBJECT_ID(@param0, N'U') IS NULL
       CREATE TABLE ${dialect.quoteIdentifier(input.tableName)} (${columns}${primaryKeySql})
-    `);
+    `, [dialect.quoteIdentifier(input.tableName)]);
+    this.clearMetadataCache(input.tableName);
   }
 
   /**
@@ -521,11 +661,12 @@ export class MsSqlProvider implements IDbProvider {
    * await provider.dropTable('users');
    */
   async dropTable(tableName: string): Promise<void> {
-    // Single-quote escape the table name used in the OBJECT_ID string literal.
-    await this.executeNonQuery(`
-      IF OBJECT_ID(N'${tableName.replace(/'/g, "''")}', N'U') IS NOT NULL
+    // The bracket-quoted name is passed as a parameter (see createTable).
+    await this.send(`
+      IF OBJECT_ID(@param0, N'U') IS NOT NULL
       DROP TABLE ${dialect.quoteIdentifier(tableName)}
-    `);
+    `, [dialect.quoteIdentifier(tableName)]);
+    this.clearMetadataCache(tableName);
   }
 
   /**
@@ -542,9 +683,10 @@ export class MsSqlProvider implements IDbProvider {
    * await provider.addColumn('users', { name: 'email', tsType: 'string' });
    */
   async addColumn(tableName: string, column: TableColumnInfo): Promise<void> {
-    await this.executeNonQuery(
+    await this.send(
       `ALTER TABLE ${dialect.quoteIdentifier(tableName)} ADD ${dialect.quoteIdentifier(column.name)} ${this.mapColumnType(column)}`
     );
+    this.clearMetadataCache(tableName);
   }
 
   /**
@@ -561,9 +703,10 @@ export class MsSqlProvider implements IDbProvider {
    * await provider.removeColumn('users', 'email');
    */
   async removeColumn(tableName: string, columnName: string): Promise<void> {
-    await this.executeNonQuery(
+    await this.send(
       `ALTER TABLE ${dialect.quoteIdentifier(tableName)} DROP COLUMN ${dialect.quoteIdentifier(columnName)}`
     );
+    this.clearMetadataCache(tableName);
   }
 
   /**
@@ -588,7 +731,7 @@ export class MsSqlProvider implements IDbProvider {
    * console.log(tables); // ['users', 'orders', '__roma_migrations']
    */
   async getTables(): Promise<string[]> {
-    const rows = await this.executeQuery<{ TABLE_NAME: string }>(`
+    const rows = await this.send<{ TABLE_NAME: string }>(`
       SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'
     `);
     return rows.map(row => row.TABLE_NAME);
@@ -597,9 +740,10 @@ export class MsSqlProvider implements IDbProvider {
   /**
    * Returns column metadata for a given table, including primary-key detection.
    *
-   * Queries `INFORMATION_SCHEMA.COLUMNS` joined against
-   * `INFORMATION_SCHEMA.KEY_COLUMN_USAGE` to identify the primary-key column
-   * using `OBJECTPROPERTY(..., 'IsPrimaryKey')`.
+   * Resolves the table with `OBJECT_ID()` (the same name resolution as the
+   * provider's unqualified DML: the user's default schema, then `dbo`) and
+   * reads `sys.columns` plus the primary-key index columns, so a table with
+   * the same name in another schema cannot leak its columns or key.
    *
    * @param table - Name of the table to inspect.
    * @returns An array of {@link TableColumnInfo} objects with name, tsType,
@@ -611,18 +755,20 @@ export class MsSqlProvider implements IDbProvider {
    * // [{ name: 'id', tsType: 'number', primaryKey: true }, ...]
    */
   async getColumnsForTable(table: string): Promise<TableColumnInfo[]> {
-    const rows = await this.executeQuery<{ name: string; type: string; primaryKey: number }>(
+    const rows = await this.send<{ name: string; type: string; primaryKey: number }>(
       `
-        SELECT COLUMN_NAME as name, DATA_TYPE as type,
-          CASE WHEN COLUMN_NAME IN (
-            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-            WHERE OBJECTPROPERTY(OBJECT_ID(CONSTRAINT_SCHEMA + '.' + QUOTENAME(CONSTRAINT_NAME)), 'IsPrimaryKey') = 1
-              AND TABLE_NAME = @param0
+        SELECT c.name AS name, TYPE_NAME(c.system_type_id) AS type,
+          CASE WHEN EXISTS (
+            SELECT 1
+            FROM sys.indexes i
+            JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+            WHERE i.is_primary_key = 1 AND i.object_id = c.object_id AND ic.column_id = c.column_id
           ) THEN 1 ELSE 0 END AS primaryKey
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_NAME = @param0
+        FROM sys.columns c
+        WHERE c.object_id = OBJECT_ID(@param0)
+        ORDER BY c.column_id
       `,
-      [table]
+      [dialect.quoteIdentifier(table)]
     );
 
     return rows.map(column => ({
@@ -648,8 +794,17 @@ export class MsSqlProvider implements IDbProvider {
    * ```
    * When a `QueryObject` is supplied the provider first attempts to push
    * `WHERE` and `ORDER BY` clauses to the server (via {@link buildSelectSql}).
-   * Predicates that cannot be serialized to SQL are applied client-side by
-   * {@link applyClientSideQuery}.
+   * The JS predicates, ordering, paging and projection are then re-applied
+   * on copies of the rows in which `bigint` values (returned as strings by
+   * the driver) are converted to numbers, so `where(x => x.id === 5)` keeps
+   * the row; the original rows are returned. A predicate SQL Server already
+   * applied that compares a date/time column with a string literal is not
+   * re-run (JS cannot compare a `Date` with a string).
+   *
+   * Raw `BEGIN`/`COMMIT`/`ROLLBACK` [`TRAN`|`TRANSACTION`] statements are
+   * routed to {@link beginTransaction}/{@link commitTransaction}/
+   * {@link rollbackTransaction} (a raw `BEGIN TRAN` on a pooled connection
+   * would leave the following statements outside the transaction).
    *
    * @param query - Either a raw SQL string or a table name when using
    *   `QueryObject`.
@@ -668,15 +823,18 @@ export class MsSqlProvider implements IDbProvider {
       // QueryObject path: build server-side SQL, then apply any remaining
       // client-side predicates (e.g. JS closures that can't be serialized).
       const command = buildSelectSql(queryOrEntityName, paramsOrQuery, dialect);
-      const rows = await this.executeQuery<T>(command.sql, command.params);
-      return applyClientSideQuery(rows, paramsOrQuery);
+      const rows = await this.send<T>(command.sql, command.params);
+      return applyQueryToDriverRows(rows, paramsOrQuery, driverColumns(rows));
     }
 
-    // Raw SQL path: bind each element of the params array as @param0, @param1, …
-    const request = this.pool.request();
-    paramsOrQuery.forEach((param, index) => request.input(`param${index}`, param));
-    const result = await request.query(queryOrEntityName);
-    return result.recordset as T[];
+    if (paramsOrQuery.length === 0 && await this.routeTransactionControl(queryOrEntityName)) {
+      return [];
+    }
+    if (!READ_ONLY_STATEMENT.test(queryOrEntityName)) {
+      // The statement may change the schema (keys included).
+      this.clearMetadataCache();
+    }
+    return this.send<T>(queryOrEntityName, paramsOrQuery);
   }
 
   /**
@@ -697,9 +855,61 @@ export class MsSqlProvider implements IDbProvider {
    * );
    */
   async executeNonQuery(sql: string, params: any[] = []): Promise<void> {
-    const request = this.pool.request();
-    params.forEach((param, index) => request.input(`param${index}`, param));
-    await request.query(sql);
+    if (params.length === 0 && await this.routeTransactionControl(sql)) {
+      return;
+    }
+    // The statement may change the schema (keys included).
+    this.clearMetadataCache();
+    await this.send(sql, params);
+  }
+
+  /**
+   * Sends one statement with `@paramN` inputs: on the transaction connection
+   * when a transaction is active (serialized, since a connection runs one
+   * request at a time), otherwise on any pooled connection.
+   */
+  private send<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+    const transaction = this.transaction;
+    if (!transaction) {
+      return runRequest<T>(this.pool.request(), sql, params);
+    }
+    const next = this.transactionQueue.then(() => {
+      if (this.transactionAborted) {
+        throw new Error('The transaction was aborted by SQL Server; roll it back before sending more statements.');
+      }
+      return runRequest<T>(transaction.request(), sql, params);
+    });
+    this.transactionQueue = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Handles a raw transaction-control statement. Returns `false` when `sql`
+   * is not one, so the caller sends it as usual.
+   */
+  private async routeTransactionControl(sql: string): Promise<boolean> {
+    const match = TRANSACTION_CONTROL.exec(sql);
+    if (!match) {
+      return false;
+    }
+    const verb = match[1].toUpperCase();
+    if (verb === 'BEGIN') {
+      await this.beginTransaction();
+    } else if (verb === 'COMMIT') {
+      await this.commitTransaction();
+    } else {
+      await this.rollbackTransaction();
+    }
+    return true;
+  }
+
+  /** Resets the transaction state; the next statement uses the pool again. */
+  private endTransaction(): void {
+    this.transaction = undefined;
+    this.transactionAborted = false;
+    this.transactionQueue = Promise.resolve();
+    // DDL is transactional in SQL Server: a rollback can undo key changes.
+    this.clearMetadataCache();
   }
 
   /**
@@ -710,7 +920,7 @@ export class MsSqlProvider implements IDbProvider {
    * and an `appliedAt` timestamp defaulting to `SYSUTCDATETIME()`.
    */
   private async ensureMigrationHistoryTable(): Promise<void> {
-    await this.executeNonQuery(`
+    await this.send(`
       IF OBJECT_ID(N'__roma_migrations', N'U') IS NULL
       CREATE TABLE [__roma_migrations] (
         [migrationName] NVARCHAR(255) NOT NULL PRIMARY KEY,
@@ -723,15 +933,36 @@ export class MsSqlProvider implements IDbProvider {
   /**
    * Resolves the primary-key column name for a given table.
    *
-   * Falls back to `'id'` when no primary key is found (e.g. the table has a
-   * composite key or is a view).
+   * Falls back to `'id'` when no primary key is found (e.g. a heap table).
+   * Composite keys are rejected: matching rows by only one of their key
+   * columns would update or delete every row sharing that value.
+   *
+   * The key columns are cached per table (see {@link clearMetadataCache}),
+   * so `update`/`remove`/`find` cost one round trip instead of two.
    *
    * @param tableName - Table to inspect.
    * @returns The primary-key column name or `'id'`.
+   * @throws {Error} If the table has a composite primary key.
    */
   private async getPrimaryKeyColumn(tableName: string): Promise<string> {
-    const primaryKey = (await this.getColumnsForTable(tableName)).find(column => column.primaryKey)?.name;
-    return primaryKey || 'id';
+    let cached = this.primaryKeyCache.get(tableName);
+    if (!cached) {
+      const lookup = this.getColumnsForTable(tableName)
+        .then(columns => columns.filter(column => column.primaryKey).map(column => column.name));
+      cached = lookup;
+      this.primaryKeyCache.set(tableName, lookup);
+      // A failed lookup is not cached.
+      lookup.catch(() => {
+        if (this.primaryKeyCache.get(tableName) === lookup) {
+          this.primaryKeyCache.delete(tableName);
+        }
+      });
+    }
+    const keys = await cached;
+    if (keys.length > 1) {
+      throw new Error(`Table '${tableName}' has a composite primary key (${keys.join(', ')}); update/remove/find by entity support a single-column key only.`);
+    }
+    return keys[0] || 'id';
   }
 
   /**
@@ -779,4 +1010,37 @@ export class MsSqlProvider implements IDbProvider {
     if (/(date|time)/.test(normalized)) return 'Date';
     return 'string';
   }
+}
+
+/** Binds `params` as `@param0`, `@param1`, … and runs `sql` on `request`. */
+async function runRequest<T>(request: MsSqlRequest, sql: string, params: any[]): Promise<T[]> {
+  params.forEach((param, index) => request.input(`param${index}`, param));
+  const result = await request.query(sql);
+  return (result.recordset || []) as T[];
+}
+
+/** Column metadata of an `mssql` recordset (`recordset.columns`). */
+type MsSqlColumns = Record<string, { type?: { declaration?: string } }>;
+
+/** SQL Server date/time types (as reported in the recordset metadata). */
+const MSSQL_TEMPORAL = new Set(['date', 'datetime', 'datetime2', 'smalldatetime', 'datetimeoffset']);
+
+/**
+ * Converters for the columns of an `mssql` recordset: `bigint` (a string in
+ * the driver, '5') to numbers; date/time columns are temporal.
+ */
+function driverColumns(rows: unknown): DriverColumns {
+  const columns = (rows as { columns?: MsSqlColumns }).columns || {};
+  const converters: Record<string, ValueConverter> = {};
+  const temporal = new Set<string>();
+  for (const name of Object.keys(columns)) {
+    const declaration = columns[name]?.type?.declaration;
+    if (declaration === 'bigint') {
+      converters[name] = toNumber;
+    } else if (declaration && MSSQL_TEMPORAL.has(declaration)) {
+      converters[name] = toDate;
+      temporal.add(name);
+    }
+  }
+  return { converters, temporal };
 }

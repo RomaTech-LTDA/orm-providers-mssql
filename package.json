@@ -1,6 +1,6 @@
 {
     "name": "@romatech/orm-providers-mssql",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "description": "Microsoft SQL Server provider for RomaTech ORM",
     "author": "RomaTech/Leandro Romanelli",
     "license": "MIT",
@@ -36,7 +36,8 @@
     "scripts": {
         "clean": "rimraf dist",
         "build": "npm run clean && tsc",
-        "watch": "tsc --watch"
+        "watch": "tsc --watch",
+        "test": "node --test"
     },
     "dependencies": {
         "mssql": "^11.0.1"
