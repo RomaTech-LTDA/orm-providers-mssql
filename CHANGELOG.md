@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `clearMetadataCache(tableName?)` and the exported `MsSqlConfig`/`MsSqlDriverOptions` types.
 
 ### Fixed
-- Query predicates re-checked in JavaScript see `bigint` columns (strings in the driver) as numbers: `where(x => x.id === 5)` on a `bigint` key returned nothing. A predicate SQL Server already applied that compares a date column with a string literal is no longer re-checked (`Date >= '2024-01-01'` is always false in JS and dropped every row).
+- Query predicates re-checked in JavaScript see `bigint` columns (strings in the driver) as numbers: `where(x => x.id === 5)` on a `bigint` key returned nothing. A predicate SQL Server already applied that compares a date column with a string literal is no longer re-checked (`Date >= '2024-01-01'` is always false in JS and dropped every row). Predicates written against the driver's own values in 2.0.0 style (for example `x.active === 1` or `x.id === '5'`) keep matching the rows the database returned: when the database already applied the predicate, a row is kept if it holds on either the converted or the original value.
 - `getColumnsForTable` resolves the table with `OBJECT_ID()` and reads `sys.columns`; a same-named table in another schema leaked its columns and primary key.
 - `createTable`/`dropTable` resolve names containing a dot as one table; they were resolved as `schema.table`, so a second `createTable` failed.
 - `update` with only `undefined` values besides the key is a no-op instead of sending invalid SQL (`SET  WHERE`).

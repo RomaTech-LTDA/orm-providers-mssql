@@ -234,6 +234,20 @@ test('client-side predicates see bigint values as numbers; the driver rows are r
   assert.deepEqual(names, ['b', 'a']);
 });
 
+test('predicates written against the driver values (2.0.0 style) still match the rows SQL Server returned', async () => {
+  // SQL Server applied [id] = '5'; the re-check must not drop the row.
+  const recordset = [{ id: '5', name: 'a' }];
+  recordset.columns = { id: { type: { declaration: 'bigint' } }, name: { type: { declaration: 'nvarchar' } } };
+  const { provider } = stubProvider(singleKey, { recordset });
+  const rows = await new QueryBuilder(class Item {}, provider, 'items').where(x => x.id === '5').toList();
+  assert.deepEqual(rows, [{ id: '5', name: 'a' }]);
+  // When JavaScript is the only filter, the converted value decides.
+  const all = [{ id: '5', name: 'a' }, { id: '6', name: 'b' }];
+  all.columns = recordset.columns;
+  const { provider: local } = stubProvider(singleKey, { recordset: all });
+  assert.deepEqual(await local.executeQuery('items', clientSideQuery(x => x.id !== 5)), [{ id: '6', name: 'b' }]);
+});
+
 test('a datetime2 compared with a string literal is left to SQL Server', async () => {
   const recordset = [{ id: 1, born: new Date(2024, 0, 2) }];
   recordset.columns = { id: { type: { declaration: 'int' } }, born: { type: { declaration: 'datetime2' } } };
